@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>暗記シート — PDFの色を隠して覚える</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink-navy:#1F2A44;
+    --ink-navy-deep:#16203A;
+    --accent-red:#D6402C;
+    --accent-red-deep:#B22F1E;
+    --accent-teal:#2F7A6F;
+    --line:#C9C2AC;
+    --cream-text:#F4F0E4;
+    --muted:#8A93A8;
+    font-size: 16px;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{
+    margin:0; padding:0; height:100%; overflow:hidden;
+    background:var(--ink-navy-deep);
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    color:var(--cream-text);
+    -webkit-user-select:none; user-select:none;
+    overscroll-behavior:none;
+  }
+  #app{
+    height:100dvh; width:100vw;
+    display:flex; flex-direction:column;
+    position:relative;
+  }
+
+  /* ---------- Top bar ---------- */
+  #topbar{
+    flex:0 0 auto;
+    display:flex; align-items:center; gap:.6rem;
+    padding: max(.7rem, env(safe-area-inset-top)) 1rem .7rem 1rem;
+    background:var(--ink-navy-deep);
+    border-bottom:1px solid rgba(255,255,255,.08);
+    z-index:20;
+  }
+  #brand{
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;
+    font-size:1.05rem;
+    letter-spacing:.02em;
+    color:var(--cream-text);
+    white-space:nowrap;
+  }
+  #brand small{
+    display:block;
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    font-weight:500;
+    font-size:.62rem;
+    color:var(--muted);
+    letter-spacing:.05em;
+  }
+  #filename{
+    flex:1;
+    min-width:0;
+    text-align:center;
+    font-size:.8rem;
+    color:var(--muted);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  #openBtnTop{
+    flex:0 0 auto;
+    border:none; background:rgba(255,255,255,.08);
+    color:var(--cream-text);
+    padding:.5rem .8rem;
+    border-radius:999px;
+    font-size:.75rem;
+    font-weight:700;
+    font-family:inherit;
+  }
+
+  /* ---------- Stage ---------- */
+  #stage{
+    flex:1 1 auto;
+    position:relative;
+    overflow:hidden;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(255,255,255,.05), transparent 60%),
+      var(--ink-navy);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #pageWrap{
+    position:relative;
+    box-shadow: 0 18px 40px -12px rgba(0,0,0,.55), 0 0 0 1px var(--paper-shadow);
+    background:var(--paper);
+    touch-action:none;
+    max-width:100%; max-height:100%;
+    transform-origin:center center;
+    will-change:transform;
+  }
+  #zoomResetChip{
+    position:absolute; top:.7rem; right:.9rem;
+    background:rgba(22,32,58,.88); color:var(--cream-text);
+    border:none; border-radius:999px;
+    padding:.4rem .8rem; font-size:.72rem; font-weight:700; font-family:inherit;
+    display:none; align-items:center; gap:.3rem;
+    z-index:16; box-shadow:0 8px 20px -6px rgba(0,0,0,.5);
+  }
+  #zoomResetChip.show{ display:flex; }
+  #pageCanvas, #maskCanvas{
+    display:block;
+    max-width:100%; max-height:100%;
+  }
+  #pageInner{
+    will-change:transform, opacity;
+  }
+  #maskCanvas{
+    position:absolute; top:0; left:0;
+  }
+
+  /* swipe zones for page turn (avoid center where user reveals) */
+  #edgeLeft, #edgeRight{
+    position:absolute; top:0; bottom:0; width:14%;
+    z-index:5;
+  }
+  #edgeLeft{ left:0; } #edgeRight{ right:0; }
+
+  /* ---------- Empty state ---------- */
+  #emptyState{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:1.1rem; text-align:center;
+    padding:2rem 1.4rem;
+    width:100%;
+  }
+  #emptyState .glyph{
+    width:76px; height:76px; border-radius:20px;
+    background:var(--accent-red);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 10px 24px -8px rgba(214,64,44,.6);
+    flex:0 0 auto;
+  }
+  #emptyState .glyph svg{ width:36px; height:36px; }
+  #emptyState h1{
+    font-family:'Shippori Mincho', serif;
+    font-size:1.4rem; font-weight:800; margin:0;
+    color:var(--cream-text);
+    width:100%; max-width:22em;
+    overflow-wrap:break-word;
+  }
+  #emptyState p{
+    margin:0; color:var(--muted); font-size:.85rem; line-height:1.7;
+    width:100%; max-width:24em;
+    overflow-wrap:break-word;
+  }
+  #openBtnMain{
+    margin-top:.4rem;
+    border:none; cursor:pointer;
+    background:var(--accent-red);
+    color:var(--cream-text);
+    font-family:inherit; font-weight:900; font-size:.95rem;
+    padding:.9rem 2rem; border-radius:999px;
+    box-shadow:0 10px 24px -8px rgba(214,64,44,.55);
+  }
+
+  /* ---------- Loading ---------- */
+  #loading{
+    position:absolute; inset:0; display:none;
+    align-items:center; justify-content:center; flex-direction:column; gap:.8rem;
+    background:rgba(22,32,58,.85); z-index:30;
+  }
+  #loading.show{ display:flex; }
+  .spinner{
+    width:34px;height:34px;border-radius:50%;
+    border:3px solid rgba(244,240,228,.2); border-top-color:var(--accent-red);
+    animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  #loading span{ font-size:.8rem; color:var(--muted); }
+
+  /* ---------- Picking mode banner ---------- */
+  #pickBanner{
+    position:absolute; top:.7rem; left:50%; transform:translateX(-50%);
+    background:var(--accent-red); color:var(--cream-text);
+    font-weight:700; font-size:.78rem;
+    padding:.55rem 1.1rem; border-radius:999px;
+    display:none; align-items:center; gap:.5rem;
+    box-shadow:0 8px 20px -6px rgba(0,0,0,.5);
+    z-index:15; white-space:nowrap;
+  }
+  #pickBanner.show{ display:flex; }
+  #pickBanner .dot{
+    width:8px;height:8px;border-radius:50%;background:var(--cream-text);
+    animation:pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.3;} }
+
+  /* ---------- Page indicator ---------- */
+  #pageIndicator{
+    position:absolute; bottom:.8rem; left:50%; transform:translateX(-50%);
+    background:rgba(22,32,58,.85);
+    padding:.35rem .9rem; border-radius:999px;
+    font-size:.72rem; color:var(--muted); font-weight:500;
+    z-index:6; pointer-events:none;
+    letter-spacing:.02em;
+  }
+  #pageIndicator b{ color:var(--cream-text); font-weight:700; }
+
+  /* ---------- Tolerance drawer ---------- */
+  #toleranceDrawer{
+    position:absolute; left:0; right:0; bottom:0;
+    background:var(--ink-navy-deep);
+    border-top:1px solid rgba(255,255,255,.08);
+    padding:1.1rem 1.3rem calc(1.3rem + env(safe-area-inset-bottom));
+    transform:translateY(100%);
+    transition:transform .25s ease;
+    z-index:25;
+    box-shadow:0 -10px 24px -10px rgba(0,0,0,.5);
+  }
+  #toleranceDrawer.open{ transform:translateY(0); }
+  #toleranceDrawer .drawerHead{
+    display:flex; align-items:center; justify-content:space-between;
+    margin:0 0 .8rem;
+  }
+  #toleranceDrawer h2{
+    font-size:.78rem; margin:0; color:var(--muted); font-weight:700;
+  }
+  #closeTolerance{
+    border:none; background:rgba(255,255,255,.1); color:var(--cream-text);
+    width:28px; height:28px; border-radius:50%; font-size:.9rem; line-height:1;
+    font-family:inherit; flex:0 0 auto;
+  }
+  #toleranceRow{ display:flex; align-items:center; gap:.8rem; }
+  #toleranceRow span{ font-size:.68rem; color:var(--muted); white-space:nowrap; }
+  input[type=range]{
+    flex:1; -webkit-appearance:none; height:6px; border-radius:999px;
+    background:linear-gradient(90deg, var(--accent-teal), var(--accent-red));
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:26px; height:26px; border-radius:50%;
+    background:var(--cream-text); border:3px solid var(--ink-navy-deep);
+    box-shadow:0 2px 8px rgba(0,0,0,.4);
+  }
+  #swatchRow{
+    display:flex; gap:.5rem; margin-top:1rem; flex-wrap:wrap; min-height:2.4rem;
+  }
+  .swatch{
+    width:2.2rem; height:2.2rem; border-radius:50%;
+    border:2px solid rgba(255,255,255,.25);
+    position:relative; flex:0 0 auto;
+  }
+  .swatch::after{
+    content:"×"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:1rem; font-weight:700; text-shadow:0 1px 3px rgba(0,0,0,.6);
+  }
+  .swatch-empty{
+    font-size:.72rem; color:var(--muted); align-self:center;
+  }
+
+  /* ---------- Bottom toolbar ---------- */
+  #toolbar{
+    flex:0 0 auto;
+    display:flex; align-items:stretch; gap:.5rem;
+    padding:.6rem .6rem calc(.6rem + env(safe-area-inset-bottom));
+    background:var(--ink-navy-deep);
+    border-top:1px solid rgba(255,255,255,.08);
+    z-index:20;
+  }
+  .tbtn{
+    flex:1;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.25rem;
+    background:transparent; border:none; color:var(--muted);
+    font-family:inherit; font-size:.62rem; font-weight:700;
+    padding:.5rem .2rem; border-radius:14px;
+    min-height:56px;
+  }
+  .tbtn svg{ width:22px; height:22px; }
+  .tbtn.active{ background:rgba(214,64,44,.18); color:var(--accent-red); }
+  .tbtn:disabled{ opacity:.35; }
+  .tbtn.primary{ color:var(--cream-text); }
+  .tbtn.primary.active{ color:var(--accent-red); }
+
+  #instructions{
+    position:absolute; inset:0; z-index:40;
+    background:rgba(22,32,58,.94);
+    display:none; align-items:center; justify-content:center; padding:2rem;
+  }
+  #instructions.show{ display:flex; }
+  #instructions .card{
+    background:var(--paper); color:var(--ink-navy-deep);
+    border-radius:20px; padding:1.6rem 1.5rem; max-width:22em;
+    box-shadow:0 20px 50px rgba(0,0,0,.5);
+  }
+  #instructions h2{
+    font-family:'Shippori Mincho', serif; font-size:1.15rem; margin:0 0 .9rem;
+  }
+  #instructions ol{ margin:0 0 1.2rem; padding-left:1.2rem; font-size:.85rem; line-height:1.9; }
+  #instructions button{
+    width:100%; border:none; background:var(--accent-red); color:var(--cream-text);
+    font-family:inherit; font-weight:800; font-size:.9rem; padding:.8rem; border-radius:999px;
+  }
+
+  #fileInput{ display:none; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="topbar">
+    <div id="brand">暗記シート<small>SEKI-SHEET</small></div>
+    <div id="filename">PDFが選択されていません</div>
+    <button id="openBtnTop">開く</button>
+  </div>
+
+  <div id="stage">
+    <div id="pageWrap">
+      <div id="pageInner">
+        <canvas id="pageCanvas"></canvas>
+        <canvas id="maskCanvas"></canvas>
+      </div>
+    </div>
+    <div id="edgeLeft"></div>
+    <div id="edgeRight"></div>
+
+    <div id="pickBanner"><span class="dot"></span>隠したい色をタップしてください</div>
+    <div id="pageIndicator"><b id="pageNow">–</b> / <span id="pageTotal">–</span></div>
+    <button id="zoomResetChip">ズームを戻す</button>
+
+    <div id="emptyState">
+      <div class="glyph">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#F4F0E4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+      </div>
+      <h1>PDFを暗記シートにする</h1>
+      <p>ノートやプリントのPDFを開くと、指定した色を黒く隠せます。指でなぞった部分だけ答えが見えます。</p>
+      <button id="openBtnMain">PDFを開く</button>
+    </div>
+
+    <div id="loading"><div class="spinner"></div><span>読み込み中…</span></div>
+  </div>
+
+  <div id="toleranceDrawer">
+    <div class="drawerHead">
+      <h2>隠す色の範囲</h2>
+      <button id="closeTolerance" aria-label="閉じる">×</button>
+    </div>
+    <div id="toleranceRow">
+      <span>せまい</span>
+      <input type="range" id="toleranceSlider" min="10" max="130" value="55">
+      <span>ひろい</span>
+    </div>
+    <div id="swatchRow"><span class="swatch-empty">スポイトで色を選ぶと、ここに表示されます</span></div>
+  </div>
+
+  <div id="toolbar">
+    <button class="tbtn" id="btnPrev" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      前へ
+    </button>
+    <button class="tbtn" id="btnEyedrop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 4.5a2.12 2.12 0 0 0-3-3l-9 9L6 15l4.5-1.5z"/><path d="M13.5 6.5 17.5 10.5"/></svg>
+      色を選ぶ
+    </button>
+    <button class="tbtn primary" id="btnToggleHide">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+      隠す/見る
+    </button>
+    <button class="tbtn" id="btnTolerance">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-11M12 6V3M20 21v-5M20 12V3M1 14h6M9 6h6M17 16h6"/></svg>
+      色の調整
+    </button>
+    <button class="tbtn" id="btnNext" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      次へ
+    </button>
+  </div>
+
+  <div id="instructions">
+    <div class="card">
+      <h2>使い方</h2>
+      <ol>
+        <li>「PDFを開く」からノートやプリントのPDFを選ぶ</li>
+        <li>「色を選ぶ」をタップし、隠したい文字（青ペンなど）を画面上でタップ</li>
+        <li>その色が黒く隠れます。指でなぞった部分だけ一時的に答えが見えます</li>
+      </ol>
+      <button id="closeInstructions">はじめる</button>
+    </div>
+  </div>
+
+  <input type="file" id="fileInput" accept="application/pdf">
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// ---------- State ----------
+let pdfDoc = null;
+let currentPageNum = 1;
+let totalPages = 0;
+let pickedColors = []; // {r,g,b}
+let tolerance = 55;
+let pickMode = false;
+let allVisible = false;
+
+// per-page cache of computed mask ImageData, keyed by page number, small LRU
+const maskCache = new Map();
+const MASK_CACHE_LIMIT = 8;
+
+// per-page cache of pre-rendered page bitmaps (surrounding pages), keyed by page number
+const pageRenderCache = new Map(); // num -> {canvas, width, height, cssW, cssH}
+const RENDER_CACHE_RADIUS = 2; // preload up to 2 pages before/after (4 neighbors total)
+let prefetchToken = 0; // bumped whenever current page/scale changes, to cancel stale prefetch chains
+
+// zoom state
+let zoomScale = 1, zoomTx = 0, zoomTy = 0;
+const ZOOM_MIN = 1, ZOOM_MAX = 4;
+const activePointers = new Map(); // pointerId -> {x,y}
+let pinchStart = null; // {dist, midX, midY, scale, tx, ty}
+
+const pageCanvas = document.getElementById('pageCanvas');
+const maskCanvas = document.getElementById('maskCanvas');
+const pageCtx = pageCanvas.getContext('2d', { willReadFrequently: true });
+const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+const pageWrap = document.getElementById('pageWrap');
+const pageInner = document.getElementById('pageInner');
+const stage = document.getElementById('stage');
+const emptyState = document.getElementById('emptyState');
+const loadingEl = document.getElementById('loading');
+const filenameEl = document.getElementById('filename');
+const pageNowEl = document.getElementById('pageNow');
+const pageTotalEl = document.getElementById('pageTotal');
+const pickBanner = document.getElementById('pickBanner');
+const toleranceDrawer = document.getElementById('toleranceDrawer');
+const toleranceSlider = document.getElementById('toleranceSlider');
+const swatchRow = document.getElementById('swatchRow');
+const btnPrev = document.getElementById('btnPrev');
+const btnNext = document.getElementById('btnNext');
+const btnEyedrop = document.getElementById('btnEyedrop');
+const btnToggleHide = document.getElementById('btnToggleHide');
+const btnTolerance = document.getElementById('btnTolerance');
+const fileInput = document.getElementById('fileInput');
+const zoomResetChip = document.getElementById('zoomResetChip');
+
+let currentMaskImageData = null; // full mask for the page currently shown
+
+// ---------- File open ----------
+document.getElementById('openBtnTop').addEventListener('click', () => fileInput.click());
+document.getElementById('openBtnMain').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) loadPdf(file);
+});
+
+async function loadPdf(file){
+  showLoading(true);
+  filenameEl.textContent = file.name;
+  const buf = await file.arrayBuffer();
+  try{
+    pdfDoc = await pdfjsLib.getDocument({ data: buf }).promise;
+    totalPages = pdfDoc.numPages;
+    currentPageNum = 1;
+    maskCache.clear();
+    pageRenderCache.clear();
+    pickedColors = [];
+    renderSwatches();
+    emptyState.style.display = 'none';
+    pageTotalEl.textContent = totalPages;
+    updateNavButtons();
+    await renderPage(currentPageNum);
+    maybeShowInstructions();
+  }catch(err){
+    alert('PDFを開けませんでした。別のファイルをお試しください。');
+    console.error(err);
+  }finally{
+    showLoading(false);
+  }
+}
+
+function showLoading(v){ loadingEl.classList.toggle('show', v); }
+
+// ---------- Instructions ----------
+function maybeShowInstructions(){
+  if (!localStorage.getItem('anki-sheet-seen')) {
+    document.getElementById('instructions').classList.add('show');
+  }
+}
+document.getElementById('closeInstructions').addEventListener('click', () => {
+  document.getElementById('instructions').classList.remove('show');
+  try{ localStorage.setItem('anki-sheet-seen', '1'); }catch(e){}
+});
+
+// ---------- Rendering a page ----------
+function computeFitParams(baseViewport){
+  const availW = stage.clientWidth * 0.94;
+  const availH = stage.clientHeight * 0.94;
+  const fitScale = Math.min(availW / baseViewport.width, availH / baseViewport.height);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let renderScale = fitScale * dpr;
+  const maxDim = 1800;
+  const rawW = baseViewport.width * renderScale;
+  if (rawW > maxDim) renderScale *= (maxDim / rawW);
+  return { renderScale, dpr };
+}
+
+async function renderPageToOffscreen(num){
+  const page = await pdfDoc.getPage(num);
+  const baseViewport = page.getViewport({ scale: 1 });
+  const { renderScale, dpr } = computeFitParams(baseViewport);
+  const viewport = page.getViewport({ scale: renderScale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return {
+    canvas, ctx,
+    width: canvas.width, height: canvas.height,
+    cssW: viewport.width / dpr, cssH: viewport.height / dpr
+  };
+}
+
+function cachePut(num, entry){
+  pageRenderCache.set(num, entry);
+  // evict entries far from current page first if over budget
+  const budget = RENDER_CACHE_RADIUS * 2 + 3;
+  if (pageRenderCache.size > budget){
+    let farthestKey = null, farthestDist = -1;
+    for (const key of pageRenderCache.keys()){
+      const d = Math.abs(key - currentPageNum);
+      if (d > farthestDist){ farthestDist = d; farthestKey = key; }
+    }
+    if (farthestKey !== null && farthestKey !== num) pageRenderCache.delete(farthestKey);
+  }
+}
+
+async function renderPage(num){
+  if (!pdfDoc) return;
+  const myToken = ++prefetchToken;
+  resetZoom();
+
+  let entry = pageRenderCache.get(num);
+  if (!entry){
+    showLoading(true);
+    entry = await renderPageToOffscreen(num);
+    if (myToken !== prefetchToken) return; // a newer navigation happened while we were rendering
+    cachePut(num, entry);
+  }
+
+  pageCanvas.width = entry.width;
+  pageCanvas.height = entry.height;
+  maskCanvas.width = entry.width;
+  maskCanvas.height = entry.height;
+  pageCtx.drawImage(entry.canvas, 0, 0);
+
+  pageCanvas.style.width = entry.cssW + 'px';
+  pageCanvas.style.height = entry.cssH + 'px';
+  maskCanvas.style.width = entry.cssW + 'px';
+  maskCanvas.style.height = entry.cssH + 'px';
+  pageWrap.style.width = entry.cssW + 'px';
+  pageWrap.style.height = entry.cssH + 'px';
+
+  await applyMask();
+  pageNowEl.textContent = num;
+  updateNavButtons();
+  showLoading(false);
+
+  schedulePrefetch(num, myToken);
+}
+
+// preload the 3-4 surrounding pages in the background, one at a time, so
+// flipping pages feels instant without blocking the current render
+function schedulePrefetch(centerNum, token){
+  const targets = [];
+  for (let d = 1; d <= RENDER_CACHE_RADIUS; d++){
+    if (centerNum - d >= 1) targets.push(centerNum - d);
+    if (centerNum + d <= totalPages) targets.push(centerNum + d);
+  }
+  let i = 0;
+  function step(){
+    if (token !== prefetchToken) return; // navigation moved on, stop this chain
+    if (i >= targets.length) return;
+    const n = targets[i++];
+    if (!pageRenderCache.has(n)){
+      renderPageToOffscreen(n).then(entry => {
+        if (token !== prefetchToken) return;
+        cachePut(n, entry);
+        setTimeout(step, 30);
+      }).catch(() => setTimeout(step, 30));
+    } else {
+      setTimeout(step, 0);
+    }
+  }
+  setTimeout(step, 60);
+}
+
+// ---------- Mask computation ----------
+function colorKey(){
+  return pickedColors.map(c => `${c.r},${c.g},${c.b}`).join('|') + '#' + tolerance;
+}
+
+async function applyMask(){
+  if (pickedColors.length === 0){
+    currentMaskImageData = null;
+    maskCtx.clearRect(0,0,maskCanvas.width, maskCanvas.height);
+    return;
+  }
+  const cacheKey = currentPageNum + '::' + colorKey();
+  let mask = maskCache.get(cacheKey);
+  if (!mask){
+    mask = computeMask();
+    maskCache.set(cacheKey, mask);
+    if (maskCache.size > MASK_CACHE_LIMIT){
+      const firstKey = maskCache.keys().next().value;
+      maskCache.delete(firstKey);
+    }
+  }
+  currentMaskImageData = mask;
+  if (!allVisible){
+    maskCtx.putImageData(mask, 0, 0);
+  } else {
+    maskCtx.clearRect(0,0,maskCanvas.width, maskCanvas.height);
+  }
+}
+
+function computeMask(){
+  const w = pageCanvas.width, h = pageCanvas.height;
+  const src = pageCtx.getImageData(0, 0, w, h);
+  const out = maskCtx.createImageData(w, h);
+  const s = src.data, o = out.data;
+  const tol2 = tolerance * tolerance;
+  const colors = pickedColors;
+  for (let i = 0; i < s.length; i += 4){
+    const r = s[i], g = s[i+1], b = s[i+2];
+    let hit = false;
+    for (let c = 0; c < colors.length; c++){
+      const col = colors[c];
+      const dr = r - col.r, dg = g - col.g, db = b - col.b;
+      if (dr*dr + dg*dg + db*db <= tol2){ hit = true; break; }
+    }
+    if (hit){
+      o[i] = 18; o[i+1] = 18; o[i+2] = 20; o[i+3] = 255;
+    } else {
+      o[i+3] = 0;
+    }
+  }
+  return out;
+}
+
+// ---------- Color picking ----------
+btnEyedrop.addEventListener('click', () => {
+  if (!pdfDoc) return;
+  pickMode = !pickMode;
+  btnEyedrop.classList.toggle('active', pickMode);
+  pickBanner.classList.toggle('show', pickMode);
+});
+
+function pickColorAt(clientX, clientY){
+  const rect = maskCanvas.getBoundingClientRect();
+  const x = Math.round((clientX - rect.left) / rect.width * pageCanvas.width);
+  const y = Math.round((clientY - rect.top) / rect.height * pageCanvas.height);
+  if (x < 0 || y < 0 || x >= pageCanvas.width || y >= pageCanvas.height) return;
+  const px = pageCtx.getImageData(x, y, 1, 1).data;
+  const color = { r: px[0], g: px[1], b: px[2] };
+  // avoid near-duplicate colors
+  const dup = pickedColors.some(c => Math.abs(c.r-color.r)<12 && Math.abs(c.g-color.g)<12 && Math.abs(c.b-color.b)<12);
+  if (!dup) pickedColors.push(color);
+  renderSwatches();
+  maskCache.clear();
+  applyMask();
+  pickMode = false;
+  btnEyedrop.classList.remove('active');
+  pickBanner.classList.remove('show');
+}
+
+function renderSwatches(){
+  swatchRow.innerHTML = '';
+  if (pickedColors.length === 0){
+    const span = document.createElement('span');
+    span.className = 'swatch-empty';
+    span.textContent = 'スポイトで色を選ぶと、ここに表示されます';
+    swatchRow.appendChild(span);
+    return;
+  }
+  pickedColors.forEach((c, idx) => {
+    const el = document.createElement('button');
+    el.className = 'swatch';
+    el.style.background = `rgb(${c.r},${c.g},${c.b})`;
+    el.style.border = 'none';
+    el.addEventListener('click', () => {
+      pickedColors.splice(idx, 1);
+      renderSwatches();
+      maskCache.clear();
+      applyMask();
+    });
+    swatchRow.appendChild(el);
+  });
+}
+
+toleranceSlider.addEventListener('input', () => {
+  tolerance = parseInt(toleranceSlider.value, 10);
+});
+toleranceSlider.addEventListener('change', () => {
+  maskCache.clear();
+  applyMask();
+});
+
+btnTolerance.addEventListener('click', () => {
+  toleranceDrawer.classList.toggle('open');
+});
+document.getElementById('closeTolerance').addEventListener('click', () => {
+  toleranceDrawer.classList.remove('open');
+});
+
+// ---------- Reveal by touch/drag ----------
+let revealing = false;
+let lastPt = null;
+let restoreTimer = null;
+
+function brushSizeForCanvas(){
+  return Math.max(28, pageCanvas.width * 0.035);
+}
+
+function ptFromEvent(e){
+  const rect = maskCanvas.getBoundingClientRect();
+  const scaleX = pageCanvas.width / rect.width;
+  const scaleY = pageCanvas.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY
+  };
+}
+
+maskCanvas.addEventListener('pointerdown', (e) => {
+  if (!pdfDoc) return;
+  if (pickMode){
+    pickColorAt(e.clientX, e.clientY);
+    return;
+  }
+  // always capture the pointer so drags that cross into the edge tap-zones
+  // (used for tap-to-turn-page) keep being reported to this canvas
+  try { maskCanvas.setPointerCapture(e.pointerId); } catch(err){}
+  if (!currentMaskImageData || allVisible) return;
+  clearTimeout(restoreTimer);
+  revealing = true;
+  const pt = ptFromEvent(e);
+  lastPt = pt;
+  eraseAt(pt);
+});
+
+maskCanvas.addEventListener('pointermove', (e) => {
+  if (!revealing) return;
+  const pt = ptFromEvent(e);
+  eraseLine(lastPt, pt);
+  lastPt = pt;
+});
+
+function endReveal(){
+  if (!revealing) return;
+  revealing = false;
+  lastPt = null;
+  clearTimeout(restoreTimer);
+  restoreTimer = setTimeout(() => {
+    if (currentMaskImageData && !allVisible){
+      maskCtx.putImageData(currentMaskImageData, 0, 0);
+    }
+  }, 220);
+}
+maskCanvas.addEventListener('pointerup', endReveal);
+maskCanvas.addEventListener('pointercancel', endReveal);
+maskCanvas.addEventListener('pointerleave', endReveal);
+
+function eraseAt(pt){
+  maskCtx.globalCompositeOperation = 'destination-out';
+  maskCtx.beginPath();
+  maskCtx.arc(pt.x, pt.y, brushSizeForCanvas()/2, 0, Math.PI*2);
+  maskCtx.fill();
+  maskCtx.globalCompositeOperation = 'source-over';
+}
+function eraseLine(a, b){
+  maskCtx.globalCompositeOperation = 'destination-out';
+  maskCtx.lineCap = 'round';
+  maskCtx.lineJoin = 'round';
+  maskCtx.lineWidth = brushSizeForCanvas();
+  maskCtx.beginPath();
+  maskCtx.moveTo(a.x, a.y);
+  maskCtx.lineTo(b.x, b.y);
+  maskCtx.stroke();
+  maskCtx.globalCompositeOperation = 'source-over';
+}
+
+// ---------- Show all / hide all ----------
+btnToggleHide.addEventListener('click', () => {
+  allVisible = !allVisible;
+  btnToggleHide.classList.toggle('active', allVisible);
+  if (!currentMaskImageData) return;
+  if (allVisible){
+    maskCtx.clearRect(0,0,maskCanvas.width, maskCanvas.height);
+  } else {
+    maskCtx.putImageData(currentMaskImageData, 0, 0);
+  }
+});
+
+// ---------- Page navigation ----------
+function updateNavButtons(){
+  btnPrev.disabled = !pdfDoc || currentPageNum <= 1;
+  btnNext.disabled = !pdfDoc || currentPageNum >= totalPages;
+}
+async function goToPage(n){
+  if (!pdfDoc) return;
+  if (n < 1 || n > totalPages) return;
+  if (n === currentPageNum) return;
+  const direction = n > currentPageNum ? 1 : -1;
+  currentPageNum = n;
+  await animateToPage(n, direction);
+}
+
+function wait(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+async function animateToPage(num, direction){
+  // slide fully off-screen (no fade), then jump to the opposite side and slide back in
+  const dist = Math.max(stage.clientWidth, pageInner.offsetWidth || 0) + 60;
+  pageInner.style.transition = 'transform .2s ease-in';
+  pageInner.style.transform = `translateX(${direction * -dist}px)`;
+  await wait(200);
+
+  pageInner.style.transition = 'none';
+  pageInner.style.transform = `translateX(${direction * dist}px)`;
+  void pageInner.offsetWidth; // force reflow so the jump applies before rendering
+  await renderPage(num);
+
+  requestAnimationFrame(() => {
+    pageInner.style.transition = 'transform .22s cubic-bezier(.22,.7,.3,1)';
+    pageInner.style.transform = 'translateX(0)';
+  });
+}
+btnPrev.addEventListener('click', () => goToPage(currentPageNum - 1));
+btnNext.addEventListener('click', () => goToPage(currentPageNum + 1));
+document.getElementById('edgeLeft').addEventListener('click', () => goToPage(currentPageNum - 1));
+document.getElementById('edgeRight').addEventListener('click', () => goToPage(currentPageNum + 1));
+
+// swipe gesture on stage (outside the reveal canvas edges already handled by edge zones;
+// also allow swipe on the mask canvas itself when not actively revealing color)
+let swipeStartX = null, swipeStartY = null, swipeMoved = false;
+maskCanvas.addEventListener('pointerdown', (e) => {
+  swipeStartX = e.clientX; swipeStartY = e.clientY; swipeMoved = false;
+}, { capture:true });
+maskCanvas.addEventListener('pointerup', (e) => {
+  if (swipeStartX === null) return;
+  const rect = maskCanvas.getBoundingClientRect();
+  const dx = e.clientX - swipeStartX;
+  const dy = e.clientY - swipeStartY;
+  if (Math.abs(dx) > rect.width * 0.6 && Math.abs(dx) > Math.abs(dy)){
+    if (dx < 0) goToPage(currentPageNum + 1);
+    else goToPage(currentPageNum - 1);
+  }
+  swipeStartX = null; swipeStartY = null;
+}, { capture:true });
+
+// ---------- Resize ----------
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    maskCache.clear();
+    pageRenderCache.clear();
+    if (pdfDoc) renderPage(currentPageNum);
+  }, 200);
+});
+
+
+// ---------- Zoom (pinch + double tap) ----------
+function applyZoomTransform(){
+  pageWrap.style.transform = `translate(${zoomTx}px, ${zoomTy}px) scale(${zoomScale})`;
+  zoomResetChip.classList.toggle('show', zoomScale > 1.03);
+}
+function resetZoom(){
+  zoomScale = 1; zoomTx = 0; zoomTy = 0;
+  pageWrap.style.transform = 'none';
+  zoomResetChip.classList.remove('show');
+}
+function clampZoomTranslate(){
+  // keep the page from drifting entirely off-screen
+  const stageRect = stage.getBoundingClientRect();
+  const w = (pageCanvas.style.width ? parseFloat(pageCanvas.style.width) : pageCanvas.width) * zoomScale;
+  const h = (pageCanvas.style.height ? parseFloat(pageCanvas.style.height) : pageCanvas.height) * zoomScale;
+  const maxTx = Math.max(0, (w - stageRect.width) / 2 + stageRect.width * 0.4);
+  const maxTy = Math.max(0, (h - stageRect.height) / 2 + stageRect.height * 0.4);
+  zoomTx = Math.max(-maxTx, Math.min(maxTx, zoomTx));
+  zoomTy = Math.max(-maxTy, Math.min(maxTy, zoomTy));
+}
+
+function pointerDist(p1, p2){
+  return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+}
+function pointerMid(p1, p2){
+  return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+}
+
+maskCanvas.addEventListener('pointerdown', (e) => {
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 2){
+    // a second finger just landed: cancel any single-finger reveal in progress
+    revealing = false;
+    lastPt = null;
+    swipeCandidate = false;
+    clearTimeout(restoreTimer);
+    if (currentMaskImageData && !allVisible) maskCtx.putImageData(currentMaskImageData, 0, 0);
+
+    const pts = Array.from(activePointers.values());
+    const mid = pointerMid(pts[0], pts[1]);
+    pinchStart = {
+      dist: pointerDist(pts[0], pts[1]),
+      mid,
+      scale: zoomScale,
+      tx: zoomTx, ty: zoomTy
+    };
+  }
+}, { capture:true });
+
+maskCanvas.addEventListener('pointermove', (e) => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 2 && pinchStart){
+    const pts = Array.from(activePointers.values());
+    const dist = pointerDist(pts[0], pts[1]);
+    const mid = pointerMid(pts[0], pts[1]);
+    const newScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pinchStart.scale * (dist / pinchStart.dist)));
+    zoomScale = newScale;
+    zoomTx = pinchStart.tx + (mid.x - pinchStart.mid.x);
+    zoomTy = pinchStart.ty + (mid.y - pinchStart.mid.y);
+    clampZoomTranslate();
+    applyZoomTransform();
+  }
+}, { capture:true });
+
+function endPointer(e){
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2){
+    pinchStart = null;
+    if (zoomScale <= 1.03) resetZoom();
+  }
+}
+maskCanvas.addEventListener('pointerup', endPointer, { capture:true });
+maskCanvas.addEventListener('pointercancel', endPointer, { capture:true });
+
+// double-tap to toggle zoom
+let lastTapTime = 0, lastTapX = 0, lastTapY = 0;
+maskCanvas.addEventListener('pointerup', (e) => {
+  if (activePointers.size > 0) return; // still mid-gesture
+  const now = Date.now();
+  const dt = now - lastTapTime;
+  const moved = Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY);
+  if (dt < 300 && moved < 24 && !pickMode){
+    if (zoomScale > 1.03){
+      resetZoom();
+    } else {
+      zoomScale = 2.2; zoomTx = 0; zoomTy = 0;
+      applyZoomTransform();
+    }
+    lastTapTime = 0;
+  } else {
+    lastTapTime = now; lastTapX = e.clientX; lastTapY = e.clientY;
+  }
+});
+
+zoomResetChip.addEventListener('click', resetZoom);
+
+// init
+toleranceDrawer.classList.remove('open');
+</script>
+</body>
+</html>
