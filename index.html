@@ -4,11 +4,26 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>暗記シート — PDFの色を隠して覚える</title>
+<meta name="description" content="PDF上の指定した色を隠して、指でなぞった部分だけ答えを確認できる暗記ツール">
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#16203A">
+<link rel="icon" href="icons/favicon.png" type="image/png">
+
+<!-- iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="暗記シート">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
 <style>
   :root{
+    --paper:#F1ECDD;
+    --paper-shadow:#DCD4B9;
     --ink-navy:#1F2A44;
     --ink-navy-deep:#16203A;
     --accent-red:#D6402C;
@@ -77,6 +92,19 @@
     font-weight:700;
     font-family:inherit;
   }
+  #installBtn{
+    flex:0 0 auto;
+    border:none; background:var(--accent-red);
+    color:var(--cream-text);
+    padding:.5rem .7rem;
+    border-radius:999px;
+    font-size:.68rem;
+    font-weight:700;
+    font-family:inherit;
+    display:flex; align-items:center; gap:.3rem;
+  }
+  #installBtn[hidden]{ display:none; }
+  #installBtn svg{ width:14px; height:14px; }
 
   /* ---------- Stage ---------- */
   #stage{
@@ -200,10 +228,49 @@
     background:rgba(22,32,58,.85);
     padding:.35rem .9rem; border-radius:999px;
     font-size:.72rem; color:var(--muted); font-weight:500;
-    z-index:6; pointer-events:none;
+    z-index:6;
     letter-spacing:.02em;
+    border:none; font-family:inherit;
+    -webkit-tap-highlight-color: transparent;
+    transition:transform .1s ease;
   }
+  #pageIndicator:active{ transform:translateX(-50%) scale(.94); }
   #pageIndicator b{ color:var(--cream-text); font-weight:700; }
+
+  /* ---------- Jump-to-page modal ---------- */
+  #jumpModal{
+    position:absolute; inset:0; z-index:45;
+    background:rgba(22,32,58,.94);
+    display:none; align-items:center; justify-content:center; padding:2rem;
+  }
+  #jumpModal.show{ display:flex; }
+  #jumpModal .card{
+    background:var(--paper); color:var(--ink-navy-deep);
+    border-radius:20px; padding:1.6rem 1.5rem; max-width:17em; width:100%;
+    box-shadow:0 20px 50px rgba(0,0,0,.5);
+  }
+  #jumpModal h2{
+    font-family:'Shippori Mincho', serif; font-size:1.1rem; margin:0 0 1.1rem;
+    text-align:center;
+  }
+  #jumpInputRow{
+    display:flex; align-items:center; justify-content:center; gap:.5rem;
+    margin-bottom:1.4rem;
+  }
+  #jumpInput{
+    width:5rem; text-align:center; font-size:1.6rem; font-weight:800;
+    font-family:inherit; color:var(--ink-navy-deep);
+    border:2px solid var(--line); border-radius:12px; padding:.5rem .3rem;
+    background:#fff;
+  }
+  #jumpInputRow span{ font-size:1rem; color:#8A8370; font-weight:700; white-space:nowrap; }
+  .jumpBtns{ display:flex; gap:.6rem; }
+  .jumpBtns button{
+    flex:1; border:none; font-family:inherit; font-weight:800; font-size:.9rem;
+    padding:.8rem; border-radius:999px;
+  }
+  #jumpCancel{ background:rgba(0,0,0,.08); color:var(--ink-navy-deep); }
+  #jumpGo{ background:var(--accent-red); color:var(--cream-text); }
 
   /* ---------- Tolerance drawer ---------- */
   #toleranceDrawer{
@@ -254,6 +321,56 @@
   }
   .swatch-empty{
     font-size:.72rem; color:var(--muted); align-self:center;
+  }
+
+  #maskColorSection{ margin-top:1.3rem; }
+  #maskColorSection h2{
+    font-size:.78rem; margin:0 0 .6rem; color:var(--muted); font-weight:700;
+  }
+  #maskColorRow{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+  .mc-swatch{
+    width:2.2rem; height:2.2rem; border-radius:50%;
+    border:2px solid rgba(255,255,255,.25);
+    flex:0 0 auto; padding:0; cursor:pointer;
+  }
+  .mc-swatch.active{
+    border-color:#fff;
+    box-shadow:0 0 0 3px var(--accent-teal);
+  }
+  #maskColorCustom{
+    width:2.2rem; height:2.2rem; border-radius:50%;
+    border:2px solid rgba(255,255,255,.25);
+    padding:0; background:none; overflow:hidden; cursor:pointer;
+  }
+  #maskColorCustom::-webkit-color-swatch-wrapper{ padding:0; }
+  #maskColorCustom::-webkit-color-swatch{ border:none; border-radius:50%; }
+  #maskColorCustom.active{
+    border-color:#fff;
+    box-shadow:0 0 0 3px var(--accent-teal);
+  }
+
+  #directionSection{ margin-top:1.3rem; }
+  #directionSection h2{
+    font-size:.78rem; margin:0 0 .6rem; color:var(--muted); font-weight:700;
+  }
+  #rtlToggle{
+    display:flex; align-items:center; gap:.7rem; cursor:pointer;
+  }
+  #rtlToggle input{ position:absolute; opacity:0; width:0; height:0; }
+  .switchTrack{
+    flex:0 0 auto; width:46px; height:27px; border-radius:999px;
+    background:rgba(255,255,255,.15);
+    position:relative; transition:background .18s ease;
+  }
+  .switchThumb{
+    position:absolute; top:3px; left:3px; width:21px; height:21px; border-radius:50%;
+    background:var(--cream-text); transition:transform .18s ease;
+  }
+  #rtlToggle input:checked + .switchTrack{ background:var(--accent-teal); }
+  #rtlToggle input:checked + .switchTrack .switchThumb{ transform:translateX(19px); }
+  .switchLabel{ font-size:.82rem; color:var(--cream-text); }
+  #directionSection p{
+    margin:.5rem 0 0; font-size:.68rem; color:var(--muted); line-height:1.6;
   }
 
   /* ---------- Bottom toolbar ---------- */
@@ -308,6 +425,10 @@
   <div id="topbar">
     <div id="brand">暗記シート<small>SEKI-SHEET</small></div>
     <div id="filename">PDFが選択されていません</div>
+    <button id="installBtn" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 19h14"/></svg>
+      インストール
+    </button>
     <button id="openBtnTop">開く</button>
   </div>
 
@@ -322,7 +443,7 @@
     <div id="edgeRight"></div>
 
     <div id="pickBanner"><span class="dot"></span>隠したい色をタップしてください</div>
-    <div id="pageIndicator"><b id="pageNow">–</b> / <span id="pageTotal">–</span></div>
+    <button id="pageIndicator"><b id="pageNow">–</b> / <span id="pageTotal">–</span></button>
     <button id="zoomResetChip">ズームを戻す</button>
 
     <div id="emptyState">
@@ -348,6 +469,28 @@
       <span>ひろい</span>
     </div>
     <div id="swatchRow"><span class="swatch-empty">スポイトで色を選ぶと、ここに表示されます</span></div>
+
+    <div id="maskColorSection">
+      <h2>隠す色（マスクの色）</h2>
+      <div id="maskColorRow">
+        <button class="mc-swatch active" data-color="18,18,20" style="background:#121214" aria-label="黒"></button>
+        <button class="mc-swatch" data-color="255,255,255" style="background:#ffffff" aria-label="白"></button>
+        <button class="mc-swatch" data-color="128,128,128" style="background:#808080" aria-label="グレー"></button>
+        <button class="mc-swatch" data-color="214,64,44" style="background:#D6402C" aria-label="赤"></button>
+        <button class="mc-swatch" data-color="47,122,111" style="background:#2F7A6F" aria-label="緑"></button>
+        <input type="color" id="maskColorCustom" value="#121214" aria-label="色を自由に選ぶ">
+      </div>
+    </div>
+
+    <div id="directionSection">
+      <h2>ページ送りの向き</h2>
+      <label id="rtlToggle">
+        <input type="checkbox" id="rtlCheckbox">
+        <span class="switchTrack"><span class="switchThumb"></span></span>
+        <span class="switchLabel">縦書き（右綴じ）に対応</span>
+      </label>
+      <p>ONにすると、スワイプや画面端タップでのページ送りの向きが逆になります。</p>
+    </div>
   </div>
 
   <div id="toolbar">
@@ -382,6 +525,20 @@
         <li>その色が黒く隠れます。指でなぞった部分だけ一時的に答えが見えます</li>
       </ol>
       <button id="closeInstructions">はじめる</button>
+    </div>
+  </div>
+
+  <div id="jumpModal">
+    <div class="card">
+      <h2>ページへ移動</h2>
+      <div id="jumpInputRow">
+        <input type="number" id="jumpInput" min="1" inputmode="numeric" pattern="[0-9]*">
+        <span>/ <span id="jumpTotal">–</span></span>
+      </div>
+      <div class="jumpBtns">
+        <button id="jumpCancel">キャンセル</button>
+        <button id="jumpGo">移動</button>
+      </div>
     </div>
   </div>
 
@@ -593,8 +750,11 @@ function schedulePrefetch(centerNum, token){
 }
 
 // ---------- Mask computation ----------
+let maskColor = { r: 18, g: 18, b: 20 }; // color used to cover the matched areas
+
 function colorKey(){
-  return pickedColors.map(c => `${c.r},${c.g},${c.b}`).join('|') + '#' + tolerance;
+  return pickedColors.map(c => `${c.r},${c.g},${c.b}`).join('|') + '#' + tolerance
+    + '@' + maskColor.r + ',' + maskColor.g + ',' + maskColor.b;
 }
 
 async function applyMask(){
@@ -628,6 +788,7 @@ function computeMask(){
   const s = src.data, o = out.data;
   const tol2 = tolerance * tolerance;
   const colors = pickedColors;
+  const mr = maskColor.r, mg = maskColor.g, mb = maskColor.b;
   for (let i = 0; i < s.length; i += 4){
     const r = s[i], g = s[i+1], b = s[i+2];
     let hit = false;
@@ -637,7 +798,7 @@ function computeMask(){
       if (dr*dr + dg*dg + db*db <= tol2){ hit = true; break; }
     }
     if (hit){
-      o[i] = 18; o[i+1] = 18; o[i+2] = 20; o[i+3] = 255;
+      o[i] = mr; o[i+1] = mg; o[i+2] = mb; o[i+3] = 255;
     } else {
       o[i+3] = 0;
     }
@@ -701,6 +862,42 @@ toleranceSlider.addEventListener('input', () => {
 toleranceSlider.addEventListener('change', () => {
   maskCache.clear();
   applyMask();
+});
+
+// ---------- Mask color picking ----------
+const mcSwatches = Array.from(document.querySelectorAll('.mc-swatch'));
+const maskColorCustom = document.getElementById('maskColorCustom');
+
+function setMaskColor(r, g, b){
+  maskColor = { r, g, b };
+  maskCache.clear();
+  applyMask();
+}
+
+mcSwatches.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const [r, g, b] = btn.dataset.color.split(',').map(Number);
+    mcSwatches.forEach(s => s.classList.remove('active'));
+    maskColorCustom.classList.remove('active');
+    btn.classList.add('active');
+    setMaskColor(r, g, b);
+  });
+});
+
+maskColorCustom.addEventListener('input', () => {
+  const hex = maskColorCustom.value;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  mcSwatches.forEach(s => s.classList.remove('active'));
+  maskColorCustom.classList.add('active');
+  setMaskColor(r, g, b);
+});
+
+// ---------- Reading direction (縦書き・右綴じ対応) ----------
+const rtlCheckbox = document.getElementById('rtlCheckbox');
+rtlCheckbox.addEventListener('change', () => {
+  readingDirection = rtlCheckbox.checked ? 'rtl' : 'ltr';
 });
 
 btnTolerance.addEventListener('click', () => {
@@ -800,17 +997,28 @@ btnToggleHide.addEventListener('click', () => {
 });
 
 // ---------- Page navigation ----------
+let readingDirection = 'ltr'; // 'ltr' = normal (left-bound), 'rtl' = 縦書き・右綴じ
+
 function updateNavButtons(){
   btnPrev.disabled = !pdfDoc || currentPageNum <= 1;
   btnNext.disabled = !pdfDoc || currentPageNum >= totalPages;
 }
-async function goToPage(n){
+
+// "次へ/前へ" always means the same thing regardless of reading direction
+// (page number +1 / -1). Only the on-screen slide direction flips for RTL books.
+function nextPage(){
+  goToPage(currentPageNum + 1, readingDirection === 'rtl' ? -1 : 1);
+}
+function prevPage(){
+  goToPage(currentPageNum - 1, readingDirection === 'rtl' ? 1 : -1);
+}
+
+async function goToPage(n, visualDir){
   if (!pdfDoc) return;
   if (n < 1 || n > totalPages) return;
   if (n === currentPageNum) return;
-  const direction = n > currentPageNum ? 1 : -1;
   currentPageNum = n;
-  await animateToPage(n, direction);
+  await animateToPage(n, visualDir);
 }
 
 function wait(ms){ return new Promise(r => setTimeout(r, ms)); }
@@ -832,28 +1040,56 @@ async function animateToPage(num, direction){
     pageInner.style.transform = 'translateX(0)';
   });
 }
-btnPrev.addEventListener('click', () => goToPage(currentPageNum - 1));
-btnNext.addEventListener('click', () => goToPage(currentPageNum + 1));
-document.getElementById('edgeLeft').addEventListener('click', () => goToPage(currentPageNum - 1));
-document.getElementById('edgeRight').addEventListener('click', () => goToPage(currentPageNum + 1));
+btnPrev.addEventListener('click', prevPage);
+btnNext.addEventListener('click', nextPage);
 
-// swipe gesture on stage (outside the reveal canvas edges already handled by edge zones;
-// also allow swipe on the mask canvas itself when not actively revealing color)
-let swipeStartX = null, swipeStartY = null, swipeMoved = false;
-maskCanvas.addEventListener('pointerdown', (e) => {
-  swipeStartX = e.clientX; swipeStartY = e.clientY; swipeMoved = false;
-}, { capture:true });
-maskCanvas.addEventListener('pointerup', (e) => {
-  if (swipeStartX === null) return;
-  const rect = maskCanvas.getBoundingClientRect();
-  const dx = e.clientX - swipeStartX;
-  const dy = e.clientY - swipeStartY;
-  if (Math.abs(dx) > rect.width * 0.6 && Math.abs(dx) > Math.abs(dy)){
-    if (dx < 0) goToPage(currentPageNum + 1);
-    else goToPage(currentPageNum - 1);
-  }
-  swipeStartX = null; swipeStartY = null;
-}, { capture:true });
+// ---------- Jump to a specific page ----------
+const pageIndicatorBtn = document.getElementById('pageIndicator');
+const jumpModal = document.getElementById('jumpModal');
+const jumpInput = document.getElementById('jumpInput');
+const jumpTotal = document.getElementById('jumpTotal');
+
+pageIndicatorBtn.addEventListener('click', () => {
+  if (!pdfDoc) return;
+  jumpInput.min = 1;
+  jumpInput.max = totalPages;
+  jumpInput.value = currentPageNum;
+  jumpTotal.textContent = totalPages;
+  jumpModal.classList.add('show');
+  jumpInput.focus();
+  jumpInput.select();
+});
+
+function closeJumpModal(){
+  jumpModal.classList.remove('show');
+}
+function doJump(){
+  const n = parseInt(jumpInput.value, 10);
+  closeJumpModal();
+  if (!Number.isFinite(n) || n < 1 || n > totalPages) return;
+  if (n === currentPageNum) return;
+  const visualDir = (n > currentPageNum)
+    ? (readingDirection === 'rtl' ? -1 : 1)
+    : (readingDirection === 'rtl' ? 1 : -1);
+  goToPage(n, visualDir);
+}
+document.getElementById('jumpCancel').addEventListener('click', closeJumpModal);
+document.getElementById('jumpGo').addEventListener('click', doJump);
+jumpInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doJump();
+});
+// physical left/right edges swap meaning for right-bound (RTL) books
+document.getElementById('edgeLeft').addEventListener('click', () => {
+  (readingDirection === 'rtl' ? nextPage : prevPage)();
+});
+document.getElementById('edgeRight').addEventListener('click', () => {
+  (readingDirection === 'rtl' ? prevPage : nextPage)();
+});
+
+
+// page turning is done via the prev/next buttons and the narrow edge zones only
+// (a general swipe-to-turn gesture on the canvas was removed because it conflicted
+// with dragging to reveal masked text, which often has a horizontal component)
 
 // ---------- Resize ----------
 let resizeTimer = null;
@@ -866,6 +1102,36 @@ window.addEventListener('resize', () => {
   }, 200);
 });
 
+// a very large swipe (>= 70% of the visible width) also turns the page,
+// without interfering with the normal drag-to-reveal gesture
+let swipeStartX = null, swipeStartY = null, swipeCandidate = false, swipeTrackedPointerId = null;
+
+maskCanvas.addEventListener('pointerdown', (e) => {
+  if (pickMode || activePointers.size !== 0){
+    swipeCandidate = false;
+    return;
+  }
+  swipeCandidate = true;
+  swipeTrackedPointerId = e.pointerId;
+  swipeStartX = e.clientX;
+  swipeStartY = e.clientY;
+});
+
+function evaluateSwipe(e){
+  if (!swipeCandidate || e.pointerId !== swipeTrackedPointerId) return;
+  swipeCandidate = false;
+  const rect = maskCanvas.getBoundingClientRect();
+  const dx = e.clientX - swipeStartX;
+  const dy = e.clientY - swipeStartY;
+  const threshold = rect.width * 0.7;
+  if (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy)){
+    // dragging left normally means "next"; flipped for right-bound (RTL) books
+    if (dx < 0) (readingDirection === 'rtl' ? prevPage : nextPage)();
+    else (readingDirection === 'rtl' ? nextPage : prevPage)();
+  }
+}
+maskCanvas.addEventListener('pointerup', evaluateSwipe);
+maskCanvas.addEventListener('pointercancel', () => { swipeCandidate = false; });
 
 // ---------- Zoom (pinch + double tap) ----------
 function applyZoomTransform(){
@@ -966,6 +1232,43 @@ zoomResetChip.addEventListener('click', resetZoom);
 
 // init
 toleranceDrawer.classList.remove('open');
+
+// ---------- PWA: service worker registration ----------
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((err) => {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}
+
+// ---------- PWA: install prompt ----------
+const installBtn = document.getElementById('installBtn');
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  installBtn.hidden = false;
+});
+
+installBtn.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  installBtn.hidden = true;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+});
+
+window.addEventListener('appinstalled', () => {
+  installBtn.hidden = true;
+  deferredInstallPrompt = null;
+});
+
+// already running as an installed app (standalone) — no need to offer install
+if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+  installBtn.hidden = true;
+}
 </script>
 </body>
 </html>
